@@ -193,13 +193,11 @@ class SqliteDriver(object):
     criteria_sql = self._format_criteria(criteria, sql_params)
     sql = 'SELECT %s FROM %s WHERE %s' % (
         select_sql, schema.name, criteria_sql)
-    result = {}
     for row in self._execute(sql, sql_params):
       return t(**{attr_name: row[result_map.index(attr_name)] for attr_name in result_map})
 
   def _execute(self, sql: str, sql_params: list = [], cursor=None):
     target = self._con if cursor is None else cursor
-    result = None
     begin_mtime = int(time.time() * 1000)
     elapsed_mtime = None
     error = None
