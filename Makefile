@@ -1,4 +1,4 @@
-.PHONY: clean test, release
+.PHONY: clean test release
 default:
 	@echo "Please choose one of the following target: dep, clean, test"
 	@exit 2
