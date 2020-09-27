@@ -25,6 +25,13 @@ class SqliteDriver(object):
         isolation_level=None,
     )
 
+  def close(self):
+    if self._con is None:
+      raise Driver.InvalidConnectionStateError(
+          expected='open', actual='closed')
+
+    self._con.close()
+
   def begin_transaction(self):
     if not self._in_transaction:
       self._execute('BEGIN TRANSACTION')
@@ -83,7 +90,8 @@ class SqliteDriver(object):
       raise Exception(
           "Error creating table `%s`: `autoincrement` is not supported on models using composite primary keys" % name)
 
-    column_sql_list = [_column_sql(k, v) for k, v in metadata.columns.items()]
+    column_sql_list = [_column_sql(k, v)
+                       for k, v in metadata.columns.items()]
     table_opts_sql = ''
     if has_composite_pkey:
       primary_key_sql = ','.join(primary_key_names)
@@ -112,8 +120,8 @@ class SqliteDriver(object):
     if len(errors) > 0:
       raise Driver.DataValidationError(schema.name, errors)
 
-    col_names = schema.columns.keys()
-    col_values = [getattr(model, n) for n in col_names]
+    col_names = row.keys()
+    col_values = [row[n] for n in col_names]
     c = self._con.cursor()
     self._execute(
         "INSERT INTO %s (%s) VALUES (%s)"
@@ -136,10 +144,11 @@ class SqliteDriver(object):
     if model is None:
       raise ValueError('`model` cannot be None')
     if len(schema.primary_key) > 1:
-      criteria = {attr_name:key[attr_name] for attr_name in schema.primary_key}
+      criteria = {attr_name: getattr(model, attr_name)
+                  for attr_name in schema.primary_key}
     else:
-      criteria = {schema.primary_key[0]:getattr(model, schema.primary_key[0])}
-
+      criteria = {schema.primary_key[0]: getattr(
+          model, schema.primary_key[0])}
 
     errors = []
     row = {}
@@ -147,8 +156,8 @@ class SqliteDriver(object):
     if len(errors) > 0:
       raise Driver.DataValidationError(schema.name, errors)
 
-    col_names = schema.columns.keys()
-    sql_params = [getattr(model, n) for n in col_names]
+    col_names = row.keys()
+    sql_params = [row[n] for n in col_names]
     set_sql = ', '.join(['%s = ?' % cn for cn in col_names])
     criteria_sql = self._format_criteria(criteria, sql_params)
     c = self._con.cursor()
@@ -161,7 +170,7 @@ class SqliteDriver(object):
         ),
         sql_params,
         cursor=c
-    )    
+    )
     if c.rowcount == 0:
       raise Driver.UnaffectedRowsError()
 
@@ -171,27 +180,29 @@ class SqliteDriver(object):
   def find_one(self, t: type, key):
     schema: TableMetadata = t.__table__
     if len(schema.primary_key) > 1:
-      criteria = {attr_name:key[attr_name] for attr_name in schema.primary_key}
+      criteria = {attr_name: key[attr_name]
+                  for attr_name in schema.primary_key}
     else:
-      criteria = {schema.primary_key[0]:key}
+      criteria = {schema.primary_key[0]: key}
 
     sql_params = []
-    
+
     all_columns = list(schema.columns.keys())
     result_map = all_columns
     select_sql = ', '.join(all_columns)
     criteria_sql = self._format_criteria(criteria, sql_params)
-    sql = 'SELECT %s FROM %s WHERE %s' % (select_sql, schema.name, criteria_sql)
+    sql = 'SELECT %s FROM %s WHERE %s' % (
+        select_sql, schema.name, criteria_sql)
     result = {}
     for row in self._execute(sql, sql_params):
       return t(**{attr_name: row[result_map.index(attr_name)] for attr_name in result_map})
 
-  def _execute(self, sql: str, sql_params: list = [], cursor = None):
+  def _execute(self, sql: str, sql_params: list = [], cursor=None):
     target = self._con if cursor is None else cursor
     result = None
     begin_mtime = int(time.time() * 1000)
-    elapsed_mtime=None
-    error=None
+    elapsed_mtime = None
+    error = None
     try:
       return target.execute(sql, sql_params)
     except sqlite3.OperationalError as err:
@@ -200,8 +211,9 @@ class SqliteDriver(object):
     finally:
       state_txt = 'completed' if error is None else 'failed'
       log_fn = _log.debug if error is None else _log.error
-      elapsed_mtime=int(time.time() * 1000) - begin_mtime
-      log_fn('Sql statement %s:\nsql: %s\nduration_ms: %d' % (state_txt, sql, elapsed_mtime))
+      elapsed_mtime = int(time.time() * 1000) - begin_mtime
+      log_fn('Sql statement %s:\nsql: %s\nduration_ms: %d' %
+             (state_txt, sql, elapsed_mtime))
 
   def _format_criteria(self, criteria: dict, sql_params: list):
     if not isinstance(criteria, dict):
@@ -242,14 +254,24 @@ class SqliteDriver(object):
     attr_value = None
     for attr_name in schema.columns:
       attr_info = schema.columns[attr_name]
-      attr_value = getattr(model, attr_name)
 
-      if attr_value is None and not attr_info.nullable and not attr_info.autoincrement:
+      # Skip autoincrement columns
+      if attr_info.autoincrement:
+        continue
+
+      if attr_info.generator:
+        attr_value = attr_info.generator()
+        setattr(model, attr_name, attr_value)
+      else:
+        attr_value = getattr(model, attr_name)
+
+      if attr_value is None and not attr_info.nullable:
         errors.append(
-            '`%s`: value is null but the column is marked as not nullable and no default value is set'
+            '`%s`: value is null but the column is marked as not nullable'
             % attr_name
         )
         continue
+
       row[attr_name] = attr_value
 
   def __enter__(self):

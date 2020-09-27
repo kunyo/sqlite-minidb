@@ -31,7 +31,7 @@ class Date(Primitive):
 
 
 class Column(object):
-  def __init__(self, column_type, nullable=False, autoincrement=False, primary_key=False):
+  def __init__(self, column_type, nullable=False, autoincrement=False, primary_key=False, generator=None):
     if autoincrement == True and not isinstance(column_type, Integer):
       raise ValueError(
           '`autoincrement` can only be used on columns of type `Integer`')
@@ -40,3 +40,4 @@ class Column(object):
     self.nullable = nullable
     self.autoincrement = autoincrement
     self.primary_key = primary_key
+    self.generator = generator
