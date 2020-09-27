@@ -53,14 +53,19 @@ class Driver(ABC):
     def __init__(self):
       super().__init__('Driver is already connected')
 
+  class InvalidConnectionStateError(Exception):
+    def __init__(self, expected, actual):
+      super().__init__('Invalid connection state. Expected: %s; actual: %s' %
+                       (expected, actual))
+
   class AlreadyInTransactionError(Exception):
     def __init__(self):
-      super().__init__('A transaction is already open on this connection')      
+      super().__init__('A transaction is already open on this connection')
 
   class NotInTransactionError(Exception):
     def __init__(self):
-      super().__init__('Not in transaction')          
+      super().__init__('Not in transaction')
 
   class UnaffectedRowsError(Exception):
     def __init__(self):
-      super().__init__('Update affected 0 rows')        
+      super().__init__('Update affected 0 rows')

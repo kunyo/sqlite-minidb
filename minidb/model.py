@@ -5,6 +5,7 @@ from .schema import Column
 
 _log = logging.getLogger(__name__)
 
+
 class TableMetadata(object):
   def __init__(self, name, columns: Dict[str, Column], primary_key: List[str]):
     self.name = name
@@ -16,7 +17,7 @@ class ModelMetadata(object):
   def __init__(self, metadata: Dict[str, TableMetadata]):
     self._metadata = metadata
 
-  def create_db(self, driver: Driver, on_create = None):
+  def create_db(self, driver: Driver, on_create=None):
     driver.begin_transaction()
     try:
       for k, v in self._metadata.items():
@@ -35,6 +36,7 @@ class ModelMetadata(object):
   def collection(self, name: str):
     return self._metadata[name]
 
+
 class Document(object):
   def __init__(self, **attrs):
     metadata = getattr(self, '__table__')
@@ -43,6 +45,7 @@ class Document(object):
         setattr(self, attr_name, attrs[attr_name])
       else:
         setattr(self, attr_name, None)
+
 
 def get_model_builder():
   class _ModelBuilder(Document):

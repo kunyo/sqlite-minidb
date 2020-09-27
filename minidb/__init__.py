@@ -7,11 +7,12 @@ _DRIVERS = {
     'sqlite': SqliteDriver
 }
 
+
 class Factory(object):
   def __init__(self, driver: str, opts: dict = {}):
     self._driver = driver
     self._opts = opts
-    
+
   def get_driver(self):
     return get_driver(self._driver, self._opts)
 
