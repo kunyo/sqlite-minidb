@@ -157,7 +157,7 @@ class SqliteDriver(object):
     if len(errors) > 0:
       raise Driver.DataValidationError(schema.name, errors)
 
-    col_names = row.keys()
+    col_names = [attr_name for attr_name in row.keys() if not schema.columns[attr_name].primary_key]
     sql_params = [row[n] for n in col_names]
     set_sql = ', '.join(['%s = ?' % cn for cn in col_names])
     criteria_sql = self._format_criteria(criteria, sql_params)

@@ -29,16 +29,29 @@ class TestDatabaseInitializer(Model):
   name = Column(String())
 
 
+class TestDatabaseUpdate(Model):
+  __tablename__ = 'TestDatabaseUpdate'
+  id = Column(Integer(), primary_key=True)
+  name = Column(String())
+
+
 @Model.database_initializer
 def _initialize_db(driver: minidb.Driver):
   driver.add(
-    TestDatabaseInitializer, 
-    TestDatabaseInitializer(
-      id=9999,
-      name='created by database initializer'
-    )
+      TestDatabaseInitializer,
+      TestDatabaseInitializer(
+          id=9999,
+          name='created by database initializer'
+      )
   )
 
+  driver.add(
+      TestDatabaseUpdate,
+      TestDatabaseUpdate(
+          id=9999,
+          name='created by database initializer'
+    )
+  )
 
 Model.build()
 
@@ -89,3 +102,19 @@ class SqliteDriverTestCase(unittest.TestCase):
     doc = self._db.find_one(TestDocumentWithDate, expected.id)
     assert not doc is None
     assert doc.created_on == created_on
+
+  def test_databaseUpdate(self):
+    expected_value = 'value has been updated'
+    doc = self._db.find_one(TestDatabaseUpdate, 9999)
+
+    assert not doc is None
+
+    doc.name = expected_value
+
+    self._db.update(TestDatabaseUpdate, doc)
+
+    doc = self._db.find_one(TestDatabaseUpdate, 9999)
+
+    assert not doc is None
+
+    assert doc.name == expected_value
