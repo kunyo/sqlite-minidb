@@ -1,9 +1,9 @@
 import unittest
 import minidb
+from datetime import datetime
 from minidb.schema import *
 
 Model = minidb.get_model_builder()
-
 
 class TestDocumentWithAutoIncrementPkey(Model):
   __tablename__ = 'TestDocumentWithAutoIncrementPkey'
@@ -14,6 +14,12 @@ class TestDocumentWithAutoIncrementPkey(Model):
 class TestDocumentWithGeneratedAttribute(Model):
   __tablename__ = 'TestDocumentWithGeneratedAttribute'
   id = Column(Integer(), generator=lambda: 1234567890, primary_key=True)
+
+
+class TestDocumentWithDate(Model):
+  __tablename__ = 'TestDocumentWithDate'
+  id = Column(Integer(), autoincrement=True, primary_key=True)
+  created_on = Column(Date())
 
 
 Model.build()
@@ -41,11 +47,22 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert doc.name == expected_doc.name
 
   def test_mustCreateAndRetrieveDocWithGeneratedAttribute(self):
-    expected_doc = TestDocumentWithGeneratedAttribute()
-    self._db.add(TestDocumentWithGeneratedAttribute, expected_doc)
+    expected = TestDocumentWithGeneratedAttribute()
+    self._db.add(TestDocumentWithGeneratedAttribute, expected)
 
-    assert expected_doc.id == 1234567890
+    assert expected.id == 1234567890
 
     doc = self._db.find_one(TestDocumentWithGeneratedAttribute, 1234567890)
     assert not doc is None
     assert doc.id == 1234567890
+
+  def test_dateTimePrecisionLoss(self):
+    created_on = datetime.utcnow().replace(microsecond=999999)
+    expected = TestDocumentWithDate(created_on=created_on)
+    self._db.add(TestDocumentWithDate, expected)
+
+    doc = self._db.find_one(TestDocumentWithDate, expected.id)
+    assert not doc is None
+    assert doc.created_on == created_on
+
+

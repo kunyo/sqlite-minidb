@@ -1,6 +1,7 @@
 import logging
 import sqlite3
 import time
+from datetime import datetime
 
 from .driver import Driver
 from .model import ModelMetadata, TableMetadata
@@ -194,7 +195,19 @@ class SqliteDriver(object):
     sql = 'SELECT %s FROM %s WHERE %s' % (
         select_sql, schema.name, criteria_sql)
     for row in self._execute(sql, sql_params):
-      return t(**{attr_name: row[result_map.index(attr_name)] for attr_name in result_map})
+      return t(**{attr_name: self._decode(row[result_map.index(attr_name)], schema.columns[attr_name].column_type) for attr_name in result_map})
+
+  def _decode(self, value, column_type):
+    if not value is None:
+      if isinstance(column_type, Date):
+        return datetime.fromtimestamp(value)
+      return value
+
+  def _encode(self, value, column_type):
+    if not value is None:
+      if isinstance(column_type, Date):
+        return value.timestamp()
+      return value
 
   def _execute(self, sql: str, sql_params: list = [], cursor=None):
     target = self._con if cursor is None else cursor
@@ -270,7 +283,7 @@ class SqliteDriver(object):
         )
         continue
 
-      row[attr_name] = attr_value
+      row[attr_name] = self._encode(attr_value, attr_info.column_type)
 
   def __enter__(self):
     self.connect()
