@@ -5,6 +5,7 @@ from minidb.schema import *
 
 Model = minidb.get_model_builder()
 
+
 class TestDocumentWithAutoIncrementPkey(Model):
   __tablename__ = 'TestDocumentWithAutoIncrementPkey'
   id = Column(Integer(), autoincrement=True, primary_key=True)
@@ -22,6 +23,23 @@ class TestDocumentWithDate(Model):
   created_on = Column(Date())
 
 
+class TestDatabaseInitializer(Model):
+  __tablename__ = 'TestDatabaseInitializer'
+  id = Column(Integer(), primary_key=True)
+  name = Column(String())
+
+
+@Model.database_initializer
+def _initialize_db(driver: minidb.Driver):
+  driver.add(
+    TestDatabaseInitializer, 
+    TestDatabaseInitializer(
+      id=9999,
+      name='created by database initializer'
+    )
+  )
+
+
 Model.build()
 
 
@@ -33,6 +51,13 @@ class SqliteDriverTestCase(unittest.TestCase):
 
   def tearDown(self):
     self._db.close()
+
+  def test_databaseInitialized(self):
+    doc = self._db.find_one(TestDatabaseInitializer, 9999)
+
+    assert not doc is None
+    assert doc.id == 9999
+    assert doc.name == 'created by database initializer'
 
   def test_mustCreateAndRetrieveDocWithAutoIncrementPkey(self):
     expected_doc = TestDocumentWithAutoIncrementPkey(name='foobar')
@@ -64,5 +89,3 @@ class SqliteDriverTestCase(unittest.TestCase):
     doc = self._db.find_one(TestDocumentWithDate, expected.id)
     assert not doc is None
     assert doc.created_on == created_on
-
-
