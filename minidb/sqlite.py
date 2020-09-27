@@ -176,7 +176,21 @@ class SqliteDriver(object):
       raise Driver.UnaffectedRowsError()
 
   def find(self, t: type, criteria: dict):
-    raise NotImplementedError()
+    schema: TableMetadata = t.__table__
+    
+    sql_params = []
+
+    all_columns = list(schema.columns.keys())
+    result_map = all_columns
+    select_sql = ', '.join(all_columns)
+    criteria_sql = self._format_criteria(criteria, sql_params)
+    sql = 'SELECT %s FROM %s WHERE %s' % (
+        select_sql, schema.name, criteria_sql)
+    result = []
+    for row in self._execute(sql, sql_params):
+      result.append(t(**{attr_name: self._decode(row[result_map.index(attr_name)], schema.columns[attr_name].column_type) for attr_name in result_map}))
+
+    return result
 
   def find_one(self, t: type, key):
     schema: TableMetadata = t.__table__
@@ -186,16 +200,9 @@ class SqliteDriver(object):
     else:
       criteria = {schema.primary_key[0]: key}
 
-    sql_params = []
-
-    all_columns = list(schema.columns.keys())
-    result_map = all_columns
-    select_sql = ', '.join(all_columns)
-    criteria_sql = self._format_criteria(criteria, sql_params)
-    sql = 'SELECT %s FROM %s WHERE %s' % (
-        select_sql, schema.name, criteria_sql)
-    for row in self._execute(sql, sql_params):
-      return t(**{attr_name: self._decode(row[result_map.index(attr_name)], schema.columns[attr_name].column_type) for attr_name in result_map})
+    results = self.find(t, criteria)
+    for x in results:
+      return x
 
   def _decode(self, value, column_type):
     if not value is None:
