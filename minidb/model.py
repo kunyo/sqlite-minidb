@@ -14,7 +14,7 @@ class TableMetadata(object):
 
 
 class ModelMetadata(object):
-  def __init__(self, metadata: Dict[str, TableMetadata], initializer = None):
+  def __init__(self, metadata: Dict[str, TableMetadata], initializer=None):
     self._metadata = metadata
     self._initializer = initializer
 
@@ -68,7 +68,8 @@ def get_model_builder():
             primary_key=primary_key
         )
         dt.__table__ = metadata[table_name]
-      _ModelBuilder.metadata = ModelMetadata(metadata, initializer=_ModelBuilder.initializer)
+      _ModelBuilder.metadata = ModelMetadata(
+          metadata, initializer=_ModelBuilder.initializer)
 
     @staticmethod
     def database_initializer(fn):
