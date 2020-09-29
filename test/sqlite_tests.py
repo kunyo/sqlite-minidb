@@ -188,3 +188,20 @@ class SqliteDriverTestCase(unittest.TestCase):
     for i in range(0, len(docs)):
       if i > 0:
         assert docs[i-1].first_name <= docs[i].first_name
+
+  def test_search(self):
+    response = self._db.search(
+      TestFind, 
+      criteria={'state':'active'}, 
+      sort=[('first_name', 'ASC')]
+    )
+
+    assert not response is None
+    assert response.total == 327
+    assert response.page_size == 1000
+    
+    docs = response.data
+    
+    for i in range(0, len(docs)):
+      if i > 0:
+        assert docs[i-1].first_name <= docs[i].first_name   

@@ -1,7 +1,17 @@
 from abc import ABC, abstractmethod
 
 
+class QueryResponse(object):
+  def __init__(self, data, total, offset, page_size):
+    self.data = data
+    self.total = total
+    self.offset = offset
+    self.page_size = page_size
+
+
 class Driver(ABC):
+  MAX_PAGE_SIZE = 1000
+
   @abstractmethod
   def create_table(self):
     pass
@@ -21,6 +31,7 @@ class Driver(ABC):
   @abstractmethod
   def count(self, t, criteria=None):
     pass
+
   @abstractmethod
   def find_one(self, t, key):
     pass
@@ -40,6 +51,24 @@ class Driver(ABC):
   @abstractmethod
   def remove(self, t, key):
     pass
+
+  def search(self, t, criteria=None, sort=None, limit=None, offset=None):
+    if limit is None:
+      limit = self.__class__.MAX_PAGE_SIZE
+    elif limit < 0:
+      raise ValueError('"limit" must be greater than 0')
+    elif limit > self.__class__.MAX_PAGE_SIZE:
+      raise ValueError('"limit" exceeds the configured MAX_PAGE_SIZE')
+    offset = offset or 0
+
+    total = self.count(t, criteria)
+
+    if offset + 1 >= total:
+      raise ValueError('"offset" exceeds total count')
+
+    data = self.find(t, criteria, sort, limit, offset)
+
+    return QueryResponse(data, total, offset, limit)
 
   class DataValidationError(Exception):
     def __init__(self, collection_name, errors):

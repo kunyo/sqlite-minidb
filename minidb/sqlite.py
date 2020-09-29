@@ -10,8 +10,7 @@ from .schema import Bit, Blob, Column, Date, Float, Integer, String
 _log = logging.getLogger(__name__)
 
 
-@Driver.register
-class SqliteDriver(object):
+class SqliteDriver(Driver):
   def __init__(self, db_file=':memory:'):
     self._con = None
     self._db_file = db_file
@@ -220,6 +219,9 @@ class SqliteDriver(object):
     results = self.find(t, criteria)
     for x in results:
       return x
+
+  def remove(self):
+    raise NotImplementedError()
 
   def _decode(self, value, column_type):
     if not value is None:
