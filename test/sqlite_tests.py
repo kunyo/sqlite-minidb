@@ -4,6 +4,7 @@ import unittest
 import minidb
 from datetime import datetime
 from minidb.schema import Column, Bit, Date, Integer, String
+from minidb.driver import PartitionKey
 
 Model = minidb.get_model_builder()
 
@@ -36,9 +37,9 @@ class TestDatabaseUpdate(Model):
   id = Column(Integer(), primary_key=True)
   name = Column(String())
 
-
 class TestFind(Model):
   __tablename__ = 'TestFind'
+  client_id = Column(String(), primary_key=True)
   id = Column(String(), primary_key=True)
   first_name = Column(String())
   last_name = Column(String())
@@ -99,7 +100,7 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert doc.id == 9999
     assert doc.name == 'created by database initializer'
 
-  def test_mustCreateAndRetrieveDocWithAutoIncrementPkey(self):
+  def test_createAndRetrieveDocWithAutoIncrementPkey(self):
     expected_doc = TestDocumentWithAutoIncrementPkey(name='foobar')
     self._db.add(TestDocumentWithAutoIncrementPkey, expected_doc)
 
@@ -111,7 +112,7 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert doc.id == expected_doc.id
     assert doc.name == expected_doc.name
 
-  def test_mustCreateAndRetrieveDocWithGeneratedAttribute(self):
+  def test_createAndRetrieveDocWithGeneratedAttribute(self):
     expected = TestDocumentWithGeneratedAttribute()
     self._db.add(TestDocumentWithGeneratedAttribute, expected)
 
@@ -152,23 +153,25 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert count == 1000
 
   def test_countWithCriteria(self):
-    count = self._db.count(TestFind, {'state':'active'})
+    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
+    count = self._db.count(TestFind, {'state':'active'}, partition_key=partition_key)
 
-    assert count == 327    
+    assert count == 103    
 
   def test_findOne(self):
-    doc_id = "4ff5ea13-29d1-4b22-80ba-07eda00eeeb1"
-    doc = self._db.find_one(TestFind, doc_id)
+    partition_key = '9103d3e3-8155-4664-add1-149124d1d9bc'
+    doc_id = '7801eb5c-4993-4da5-8f01-81a44d091e36'
+    doc = self._db.find_one(TestFind, {'id':doc_id,'client_id':partition_key})
 
     assert not doc is None
     assert doc.id == doc_id
-    assert doc.first_name == "Robert"
-    assert doc.last_name == "Maldonado"
-    assert doc.email == "yjohnson@hansen.info"
+    assert doc.first_name == "Jack"
+    assert doc.last_name == "Meyer"
+    assert doc.email == "jennifer62@hotmail.com"
     assert doc.state == "deleted"
-    assert doc.locked == False
-    assert doc.created_on == datetime(2020, 3, 26, 15, 48, 8)
-    assert doc.updated_on == datetime(2020, 9, 21, 8, 59, 58)
+    assert doc.locked == True
+    assert doc.created_on == datetime(2020, 9, 5, 20, 47, 43)
+    assert doc.updated_on == datetime(2020, 3, 7, 18, 8, 47)
   
   def test_findAll(self):
     docs = self._db.find(TestFind)
@@ -176,28 +179,39 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert not docs is None
     assert len(docs) == 1000
 
+  def test_findAllWithPartitionKey(self):
+    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
+    docs = self._db.find(TestFind, partition_key=partition_key)
+
+    assert not docs is None
+    assert len(docs) == 314    
+
   def test_find(self):
+    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
     docs = self._db.find(
       TestFind, 
       criteria={'state':'active'}, 
-      sort=[('first_name', 'ASC')]
+      sort=[('first_name', 'ASC')],
+      partition_key=partition_key
     )
 
     assert not docs is None
-    assert len(docs) == 327
+    assert len(docs) == 103
     for i in range(0, len(docs)):
       if i > 0:
         assert docs[i-1].first_name <= docs[i].first_name
 
   def test_search(self):
+    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
     response = self._db.search(
       TestFind, 
       criteria={'state':'active'}, 
-      sort=[('first_name', 'ASC')]
+      sort=[('first_name', 'ASC')],
+      partition_key=partition_key
     )
 
     assert not response is None
-    assert response.total == 327
+    assert response.total == 103
     assert response.page_size == 1000
     
     docs = response.data

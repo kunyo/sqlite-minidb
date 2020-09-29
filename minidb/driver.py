@@ -9,6 +9,12 @@ class QueryResponse(object):
     self.page_size = page_size
 
 
+class PartitionKey(object):
+  def __init__(self, **kwargs):
+    for attr_name in kwargs:
+      setattr(self, attr_name, kwargs[attr_name])
+
+
 class Driver(ABC):
   MAX_PAGE_SIZE = 1000
 
@@ -29,7 +35,7 @@ class Driver(ABC):
     pass
 
   @abstractmethod
-  def count(self, t, criteria=None):
+  def count(self, t, criteria=None, partition_key=None):
     pass
 
   @abstractmethod
@@ -37,7 +43,7 @@ class Driver(ABC):
     pass
 
   @abstractmethod
-  def find(self, t, criteria=None, sort=None, limit=None, offset=None):
+  def find(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None):
     pass
 
   @abstractmethod
@@ -52,7 +58,7 @@ class Driver(ABC):
   def remove(self, t, key):
     pass
 
-  def search(self, t, criteria=None, sort=None, limit=None, offset=None):
+  def search(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None):
     if limit is None:
       limit = self.__class__.MAX_PAGE_SIZE
     elif limit < 0:
@@ -61,12 +67,17 @@ class Driver(ABC):
       raise ValueError('"limit" exceeds the configured MAX_PAGE_SIZE')
     offset = offset or 0
 
-    total = self.count(t, criteria)
+    total = self.count(
+        t, criteria=criteria, partition_key=partition_key
+    )
 
     if offset + 1 >= total:
       raise ValueError('"offset" exceeds total count')
 
-    data = self.find(t, criteria, sort, limit, offset)
+    data = self.find(
+        t, criteria=criteria, sort=sort,
+        limit=limit, offset=offset, partition_key=partition_key
+    )
 
     return QueryResponse(data, total, offset, limit)
 

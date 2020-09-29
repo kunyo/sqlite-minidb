@@ -156,7 +156,8 @@ class SqliteDriver(Driver):
     if len(errors) > 0:
       raise Driver.DataValidationError(schema.name, errors)
 
-    col_names = [attr_name for attr_name in row.keys() if not schema.columns[attr_name].primary_key]
+    col_names = [attr_name for attr_name in row.keys(
+    ) if not schema.columns[attr_name].primary_key]
     sql_params = [row[n] for n in col_names]
     set_sql = ', '.join(['%s = ?' % cn for cn in col_names])
     criteria_sql = self._format_criteria(criteria, sql_params)
@@ -174,37 +175,41 @@ class SqliteDriver(Driver):
     if c.rowcount == 0:
       raise Driver.UnaffectedRowsError()
 
-  def count(self, t: type, criteria=None):
+  def count(self, t: type, criteria=None, partition_key=None):
     schema: TableMetadata = t.__table__
 
     sql_params = []
 
-    criteria_sql = 'WHERE ' + self._format_criteria(criteria, sql_params) if not criteria is None else ''
+    criteria_sql = 'WHERE ' + self._format_criteria(
+        criteria, sql_params, partition_key) if not criteria is None or not partition_key is None else ''
     sql = 'SELECT COUNT(*) FROM %s %s' % (
         schema.name, criteria_sql
     )
-    
+
     count = None
     for (count,) in self._execute(sql, sql_params):
       break
     return count
 
-  def find(self, t: type, criteria=None, sort=None, limit=None, offset=None):
+  def find(self, t: type, criteria=None, sort=None, limit=None, offset=None, partition_key=None):
     schema: TableMetadata = t.__table__
-    
+
     sql_params = []
 
     all_columns = list(schema.columns.keys())
     result_map = all_columns
     select_sql = ', '.join(all_columns)
-    criteria_sql = 'WHERE ' + self._format_criteria(criteria, sql_params) if not criteria is None else ''
+    criteria_sql = 'WHERE ' + self._format_criteria(
+        criteria, sql_params, partition_key) if not criteria is None or not partition_key is None else ''
     sort_sql = self._format_sort(sort) if not sort is None else ''
-    limit_sql = 'LIMIT %d OFFSET %d' % (limit, offset or 0) if not limit is None else ''
+    limit_sql = 'LIMIT %d OFFSET %d' % (
+        limit, offset or 0) if not limit is None else ''
     sql = 'SELECT %s FROM %s %s %s %s' % (
         select_sql, schema.name, criteria_sql, sort_sql, limit_sql)
     result = []
     for row in self._execute(sql, sql_params):
-      result.append(t(**{attr_name: self._decode(row[result_map.index(attr_name)], schema.columns[attr_name].column_type) for attr_name in result_map}))
+      result.append(t(**{attr_name: self._decode(row[result_map.index(
+          attr_name)], schema.columns[attr_name].column_type) for attr_name in result_map}))
 
     return result
 
@@ -252,23 +257,31 @@ class SqliteDriver(Driver):
       log_fn('Sql statement %s:\nsql: %s\nduration_ms: %d' %
              (state_txt, sql, elapsed_mtime))
 
-  def _format_criteria(self, criteria: dict, sql_params: list):
-    if not isinstance(criteria, dict):
-      raise ValueError('`criteria` must be instance of `dict`')
-    if len(criteria) == 0:
-      raise ValueError('`criteria` cannot be empty')
+  def _format_criteria(self, criteria: dict, sql_params: list, partition_key=None):
+    if not criteria is None:
+      if not isinstance(criteria, dict):
+        raise TypeError('`criteria` must be instance of `dict`')
+      if len(criteria) == 0:
+        raise ValueError('`criteria` cannot be empty')
 
     criteria_sql_list = []
-    for k, v in criteria.items():
-      criteria_args = v if isinstance(v, list) else [v]
-      if k[0] == "$":
-        op_name = k[1:]
-        criteria_sql_list.append(self._format_operator(
-            op_name, criteria_args, sql_params))
-        continue
 
-      criteria_sql_list.append('%s = ?' % k)
-      sql_params.append(v)
+    if not criteria is None:
+      for k, v in criteria.items():
+        criteria_args = v if isinstance(v, list) else [v]
+        if k[0] == "$":
+          op_name = k[1:]
+          criteria_sql_list.append(self._format_operator(
+              op_name, criteria_args, sql_params))
+          continue
+
+        criteria_sql_list.append('%s = ?' % k)
+        sql_params.append(v)
+
+    if partition_key:
+      for k, v in vars(partition_key).items():
+        criteria_sql_list.append('%s = ?' % k)
+        sql_params.append(v)
 
     criteria_sql = ' AND '.join(criteria_sql_list)
     if len(criteria_sql_list) > 1:
@@ -286,10 +299,10 @@ class SqliteDriver(Driver):
 
     return operators[name](*args)
 
-  def _format_sort(self, criteria):   
+  def _format_sort(self, criteria):
     if not isinstance(criteria, list):
       raise TypeError('`criteria` must be an instance of `list`')
-    
+
     if len(criteria) == 0:
       raise ValueError('`criteria` does not contain any item')
 
@@ -304,12 +317,12 @@ class SqliteDriver(Driver):
       attr_name, sort_dir = c
 
       if sort_dir != 'ASC' and sort_dir != 'DESC':
-        raise ValueError('`criteria` items sort direction must be either "ASC" or "DESC"')
+        raise ValueError(
+            '`criteria` items sort direction must be either "ASC" or "DESC"')
 
       criterias_sql.append('%s %s' % (attr_name, sort_dir))
-    
-    return 'ORDER BY ' + ', '.join(criterias_sql)
 
+    return 'ORDER BY ' + ', '.join(criterias_sql)
 
   def _map_row(self, model, schema, row, errors):
     attr_info: Column = None
