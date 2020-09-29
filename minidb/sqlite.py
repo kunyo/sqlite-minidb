@@ -175,6 +175,21 @@ class SqliteDriver(object):
     if c.rowcount == 0:
       raise Driver.UnaffectedRowsError()
 
+  def count(self, t: type, criteria=None):
+    schema: TableMetadata = t.__table__
+
+    sql_params = []
+
+    criteria_sql = 'WHERE ' + self._format_criteria(criteria, sql_params) if not criteria is None else ''
+    sql = 'SELECT COUNT(*) FROM %s %s' % (
+        schema.name, criteria_sql
+    )
+    
+    count = None
+    for (count,) in self._execute(sql, sql_params):
+      break
+    return count
+
   def find(self, t: type, criteria=None, sort=None, limit=None, offset=None):
     schema: TableMetadata = t.__table__
     
