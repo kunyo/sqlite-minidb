@@ -151,6 +151,11 @@ class SqliteDriverTestCase(unittest.TestCase):
 
     assert count == 1000
 
+  def test_countWithCriteria(self):
+    count = self._db.count(TestFind, {'state':'active'})
+
+    assert count == 327    
+
   def test_findOne(self):
     doc_id = "4ff5ea13-29d1-4b22-80ba-07eda00eeeb1"
     doc = self._db.find_one(TestFind, doc_id)
