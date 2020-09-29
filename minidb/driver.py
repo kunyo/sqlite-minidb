@@ -19,6 +19,9 @@ class Driver(ABC):
     pass
 
   @abstractmethod
+  def count(self, t, criteria=None):
+    pass
+  @abstractmethod
   def find_one(self, t, key):
     pass
 
