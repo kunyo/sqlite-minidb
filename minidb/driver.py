@@ -23,7 +23,7 @@ class Driver(ABC):
     pass
 
   @abstractmethod
-  def find(self, t, query):
+  def find(self, t, criteria=None, sort=None, limit=None, offset=None):
     pass
 
   @abstractmethod

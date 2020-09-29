@@ -175,7 +175,7 @@ class SqliteDriver(object):
     if c.rowcount == 0:
       raise Driver.UnaffectedRowsError()
 
-  def find(self, t: type, criteria: dict):
+  def find(self, t: type, criteria=None, sort=None, limit=None, offset=None):
     schema: TableMetadata = t.__table__
     
     sql_params = []
@@ -183,9 +183,11 @@ class SqliteDriver(object):
     all_columns = list(schema.columns.keys())
     result_map = all_columns
     select_sql = ', '.join(all_columns)
-    criteria_sql = self._format_criteria(criteria, sql_params)
-    sql = 'SELECT %s FROM %s WHERE %s' % (
-        select_sql, schema.name, criteria_sql)
+    criteria_sql = 'WHERE ' + self._format_criteria(criteria, sql_params) if not criteria is None else ''
+    sort_sql = self._format_sort(sort) if not sort is None else ''
+    limit_sql = 'LIMIT %d OFFSET %d' % (limit, offset or 0) if not limit is None else ''
+    sql = 'SELECT %s FROM %s %s %s %s' % (
+        select_sql, schema.name, criteria_sql, sort_sql, limit_sql)
     result = []
     for row in self._execute(sql, sql_params):
       result.append(t(**{attr_name: self._decode(row[result_map.index(attr_name)], schema.columns[attr_name].column_type) for attr_name in result_map}))
@@ -266,6 +268,31 @@ class SqliteDriver(object):
       raise ValueError('`name`: invalid operator: `%s`' % name)
 
     return operators[name](*args)
+
+  def _format_sort(self, criteria):   
+    if not isinstance(criteria, list):
+      raise TypeError('`criteria` must be an instance of `list`')
+    
+    if len(criteria) == 0:
+      raise ValueError('`criteria` does not contain any item')
+
+    criterias_sql = []
+    for c in criteria:
+      if not isinstance(c, tuple):
+        raise TypeError('`criteria` items must be instances of `tuple`')
+
+      if len(c) != 2:
+        raise ValueError('`criteria` items must contain exactly 2 values')
+
+      attr_name, sort_dir = c
+
+      if sort_dir != 'ASC' and sort_dir != 'DESC':
+        raise ValueError('`criteria` items sort direction must be either "ASC" or "DESC"')
+
+      criterias_sql.append('%s %s' % (attr_name, sort_dir))
+    
+    return 'ORDER BY ' + ', '.join(criterias_sql)
+
 
   def _map_row(self, model, schema, row, errors):
     attr_info: Column = None

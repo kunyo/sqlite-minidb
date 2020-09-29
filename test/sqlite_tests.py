@@ -1,7 +1,9 @@
+import json
+import os
 import unittest
 import minidb
 from datetime import datetime
-from minidb.schema import *
+from minidb.schema import Column, Bit, Date, Integer, String
 
 Model = minidb.get_model_builder()
 
@@ -35,6 +37,18 @@ class TestDatabaseUpdate(Model):
   name = Column(String())
 
 
+class TestFind(Model):
+  __tablename__ = 'TestFind'
+  id = Column(String(), primary_key=True)
+  first_name = Column(String())
+  last_name = Column(String())
+  email = Column(String())
+  state = Column(String())
+  locked = Column(Bit())
+  created_on = Column(Date())
+  updated_on = Column(Date())
+
+
 @Model.database_initializer
 def _initialize_db(driver: minidb.Driver):
   driver.add(
@@ -50,19 +64,32 @@ def _initialize_db(driver: minidb.Driver):
       TestDatabaseUpdate(
           id=9999,
           name='created by database initializer'
-    )
+      )
   )
+
+  with open(os.path.join(os.path.dirname(__file__), 'find_test_data.json'), 'rb') as fh:
+    test_data = json.loads(fh.read())
+
+  for td in test_data:
+    td['created_on'] = datetime.fromtimestamp(td['created_on'])
+    td['updated_on'] = datetime.fromtimestamp(td['updated_on'])
+    
+    doc = TestFind(**td)
+    driver.add(TestFind, doc)
+
 
 Model.build()
 
 
 class SqliteDriverTestCase(unittest.TestCase):
-  def setUp(self):
+  @classmethod
+  def setUpClass(self):
     self._db = minidb.get_driver('sqlite', {'db_file': ':memory:'})
     self._db.connect()
     Model.metadata.create_db(self._db)
 
-  def tearDown(self):
+  @classmethod
+  def tearDownClass(self):
     self._db.close()
 
   def test_databaseInitialized(self):
@@ -118,3 +145,36 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert not doc is None
 
     assert doc.name == expected_value
+
+  def test_findOne(self):
+    doc_id = "4ff5ea13-29d1-4b22-80ba-07eda00eeeb1"
+    doc = self._db.find_one(TestFind, doc_id)
+
+    assert not doc is None
+    assert doc.id == doc_id
+    assert doc.first_name == "Robert"
+    assert doc.last_name == "Maldonado"
+    assert doc.email == "yjohnson@hansen.info"
+    assert doc.state == "deleted"
+    assert doc.locked == False
+    assert doc.created_on == datetime(2020, 3, 26, 15, 48, 8)
+    assert doc.updated_on == datetime(2020, 9, 21, 8, 59, 58)
+  
+  def test_findAll(self):
+    docs = self._db.find(TestFind)
+
+    assert not docs is None
+    assert len(docs) == 1000
+
+  def test_find(self):
+    docs = self._db.find(
+      TestFind, 
+      criteria={'state':'active'}, 
+      sort=[('first_name', 'ASC')]
+    )
+
+    assert not docs is None
+    assert len(docs) == 327
+    for i in range(0, len(docs)):
+      if i > 0:
+        assert docs[i-1].first_name <= docs[i].first_name
