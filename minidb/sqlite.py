@@ -160,7 +160,7 @@ class SqliteDriver(Driver):
     ) if not schema.columns[attr_name].primary_key]
     sql_params = [row[n] for n in col_names]
     set_sql = ', '.join(['%s = ?' % cn for cn in col_names])
-    criteria_sql = self._format_criteria(criteria, sql_params)
+    criteria_sql = self._format_criteria(criteria, sql_params, schema)
     c = self._con.cursor()
     self._execute(
         "UPDATE %s SET %s WHERE %s"
@@ -181,7 +181,7 @@ class SqliteDriver(Driver):
     sql_params = []
 
     criteria_sql = 'WHERE ' + self._format_criteria(
-        criteria, sql_params, partition_key) if not criteria is None or not partition_key is None else ''
+        criteria, sql_params, schema, partition_key) if not criteria is None or not partition_key is None else ''
     sql = 'SELECT COUNT(*) FROM %s %s' % (
         schema.name, criteria_sql
     )
@@ -200,7 +200,7 @@ class SqliteDriver(Driver):
     result_map = all_columns
     select_sql = ', '.join(all_columns)
     criteria_sql = 'WHERE ' + self._format_criteria(
-        criteria, sql_params, partition_key) if not criteria is None or not partition_key is None else ''
+        criteria, sql_params, schema, partition_key) if not criteria is None or not partition_key is None else ''
     sort_sql = self._format_sort(sort) if not sort is None else ''
     limit_sql = 'LIMIT %d OFFSET %d' % (
         limit, offset or 0) if not limit is None else ''
@@ -257,7 +257,7 @@ class SqliteDriver(Driver):
       log_fn('Sql statement %s:\nsql: %s\nduration_ms: %d' %
              (state_txt, sql, elapsed_mtime))
 
-  def _format_criteria(self, criteria: dict, sql_params: list, partition_key=None):
+  def _format_criteria(self, criteria: dict, sql_params: list, schema: TableMetadata, partition_key=None):
     if not criteria is None:
       if not isinstance(criteria, dict):
         raise TypeError('`criteria` must be instance of `dict`')
@@ -265,8 +265,9 @@ class SqliteDriver(Driver):
         raise ValueError('`criteria` cannot be empty')
 
     criteria_sql_list = []
-
     if not criteria is None:
+      criteria_args = None
+      col_info = None
       for k, v in criteria.items():
         criteria_args = v if isinstance(v, list) else [v]
         if k[0] == "$":
@@ -275,13 +276,17 @@ class SqliteDriver(Driver):
               op_name, criteria_args, sql_params))
           continue
 
+        col_info = schema.columns.get(k)
+
         criteria_sql_list.append('%s = ?' % k)
-        sql_params.append(v)
+        sql_params.append(self._encode(v, col_info.column_type))
 
     if partition_key:
+      col_info = None
       for k, v in vars(partition_key).items():
+        col_info = schema.columns.get(k)
         criteria_sql_list.append('%s = ?' % k)
-        sql_params.append(v)
+        sql_params.append(self._encode(v, col_info.column_type))
 
     criteria_sql = ' AND '.join(criteria_sql_list)
     if len(criteria_sql_list) > 1:
