@@ -35,7 +35,7 @@ class Driver(ABC):
     pass
 
   @abstractmethod
-  def count(self, t, criteria=None, partition_key=None):
+  def count(self, t, criteria=None, partition_key=None, term=None):
     pass
 
   @abstractmethod
@@ -43,7 +43,7 @@ class Driver(ABC):
     pass
 
   @abstractmethod
-  def find(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None):
+  def find(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None, term=None):
     pass
 
   @abstractmethod
@@ -58,7 +58,7 @@ class Driver(ABC):
   def remove(self, t, key):
     pass
 
-  def search(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None):
+  def search(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None, term=None):
     if limit is None:
       limit = self.__class__.MAX_PAGE_SIZE
     elif limit < 0:
@@ -68,15 +68,12 @@ class Driver(ABC):
     offset = offset or 0
 
     total = self.count(
-        t, criteria=criteria, partition_key=partition_key
+        t, criteria=criteria, partition_key=partition_key, term=term
     )
-
-    if offset + 1 >= total:
-      raise ValueError('"offset" exceeds total count')
-
+    
     data = self.find(
         t, criteria=criteria, sort=sort,
-        limit=limit, offset=offset, partition_key=partition_key
+        limit=limit, offset=offset, partition_key=partition_key, term=term
     )
 
     return QueryResponse(data, total, offset, limit)

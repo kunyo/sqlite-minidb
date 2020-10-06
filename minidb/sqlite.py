@@ -10,7 +10,23 @@ from .schema import Bit, Blob, Column, Date, Float, Integer, String
 _log = logging.getLogger(__name__)
 
 
+def _and(*criterias):
+  result = ' AND '.join(criterias)
+  if len(criterias) > 1:
+    result = '(' + result + ')'
+  return result
+
+
+def _or(*criterias):
+  result = ' OR '.join(criterias)
+  if len(criterias) > 1:
+    result = '(' + result + ')'
+  return result
+
+
 class SqliteDriver(Driver):
+  FTS_TABLE_PREFIX = 'fts5__'
+
   def __init__(self, db_file=':memory:'):
     self._con = None
     self._db_file = db_file
@@ -98,16 +114,64 @@ class SqliteDriver(Driver):
       column_sql_list.append('PRIMARY KEY (%s)' % primary_key_sql)
       table_opts_sql += ' WITHOUT ROWID'
 
-    sql = 'CREATE TABLE %s (\n' % name \
-        + ',\n'.join(column_sql_list)\
+    self._execute(
+        'CREATE TABLE %s (\n' % name
+        + ',\n'.join(column_sql_list)
         + '\n) %s' % table_opts_sql
+    )
 
-    try:
-      self._execute(sql)
-      _log.debug('SQL statement executed: %s' % sql)
-    except:
-      _log.error('SQL statement failed: %s' % sql)
-      raise
+    analyzed_columns = [col_name for col_name,
+                        c in metadata.columns.items() if not c.analyze is None]
+    if len(analyzed_columns) > 0:
+      index_table_name = "%s%s" % (self.__class__.FTS_TABLE_PREFIX, name)
+      index_column_names = primary_key_names + analyzed_columns
+
+      self._execute(
+          'CREATE VIRTUAL TABLE %s USING fts5(%s)'
+          % (index_table_name, ', '.join(index_column_names))
+      )
+
+      def _trigger(table_name, event_name, sql):
+        return 'CREATE TRIGGER %s__%s AFTER %s ON %s BEGIN\n%s\nEND;' \
+            % (table_name, event_name.lower(), event_name.upper(), table_name, sql)
+
+      self._executescript(_trigger(
+          table_name=metadata.name,
+          event_name="INSERT",
+          sql="INSERT INTO %s (%s) VALUES (%s);" % (
+              index_table_name,
+              ', '.join(index_column_names),
+              ', '.join(
+                  ['new.%s' % col_name for col_name in index_column_names]),
+          )
+      ))
+      self._executescript(_trigger(
+          table_name=metadata.name,
+          event_name="DELETE",
+          sql="INSERT INTO %s (%s, %s) VALUES ('delete', %s);" % (
+              index_table_name,
+              index_table_name,
+              ', '.join(index_column_names),
+              ', '.join(
+                  ['old.%s' % col_name for col_name in index_column_names]),
+          )
+      ))
+      self._executescript(_trigger(
+          table_name=metadata.name,
+          event_name="UPDATE",
+          sql="INSERT INTO %s (%s, %s) VALUES ('delete', %s);" % (
+              index_table_name,
+              index_table_name,
+              ', '.join(index_column_names),
+              ', '.join(
+                  ['old.%s' % col_name for col_name in index_column_names]),
+          ) + "INSERT INTO %s (%s) VALUES (%s);" % (
+              index_table_name,
+              ', '.join(index_column_names),
+              ', '.join(
+                  ['new.%s' % col_name for col_name in index_column_names]),
+          )
+      ))
 
   def add(self, t: type, model):
     schema: TableMetadata = t.__table__
@@ -175,7 +239,10 @@ class SqliteDriver(Driver):
     if c.rowcount == 0:
       raise Driver.UnaffectedRowsError()
 
-  def count(self, t: type, criteria=None, partition_key=None):
+  def count(self, t: type, criteria=None, partition_key=None, term=None):
+    if not term is None:
+      return self._count_ft(t, term, criteria, partition_key)
+
     schema: TableMetadata = t.__table__
 
     sql_params = []
@@ -186,12 +253,82 @@ class SqliteDriver(Driver):
         schema.name, criteria_sql
     )
 
-    count = None
     for (count,) in self._execute(sql, sql_params):
-      break
-    return count
+      return count
 
-  def find(self, t: type, criteria=None, sort=None, limit=None, offset=None, partition_key=None):
+  def _count_ft(self, t: type, term, criteria=None, partition_key=None):
+    schema: TableMetadata = t.__table__
+    analyzed_columns = [col_name for col_name,
+                        c in schema.columns.items() if c.analyze]
+    sql_params = []
+
+    where_sql = [
+      "%s%s MATCH '%s'" % (self.__class__.FTS_TABLE_PREFIX, schema.name, term)
+    ]
+
+    join_on_sql = [
+        _and(*["a.%s = b.%s" % (col_name, col_name)
+               for col_name in schema.primary_key])
+    ]
+
+    if not criteria is None:
+      join_on_sql.append(self._format_criteria(
+          criteria, sql_params, schema, partition_key=partition_key, alias="b"))
+
+    if not partition_key is None:
+      where_sql.insert(0, self._format_key(
+          vars(partition_key), sql_params, schema, prefix='a'))
+
+    sql = "SELECT COUNT(*) " \
+        + "FROM %s%s a " % (self.__class__.FTS_TABLE_PREFIX, schema.name) \
+        + "INNER JOIN %s b ON %s " % (schema.name, _and(*join_on_sql)) \
+        + "WHERE %s " % _and(*where_sql)
+
+    for (count,) in self._execute(sql, sql_params):
+      return count
+
+  def _find_ft(self, t: type, term, criteria=None, sort=None, limit=None, offset=None, partition_key=None):
+    schema: TableMetadata = t.__table__
+    all_columns = [col_name for col_name in schema.columns]
+    sql_params = []
+
+    where_sql = [
+      "%s%s MATCH '%s'" % (self.__class__.FTS_TABLE_PREFIX, schema.name, term)
+    ]
+
+    join_on_sql = [
+        _and(*["a.%s = b.%s" % (col_name, col_name)
+               for col_name in schema.primary_key])
+    ]
+
+    if not criteria is None:
+      join_on_sql.append(self._format_criteria(
+          criteria, sql_params, schema, partition_key=partition_key, alias="b"))
+
+    if not partition_key is None:
+      where_sql.insert(0, self._format_key(
+          vars(partition_key), sql_params, schema, prefix='a'))
+
+    sql = "SELECT %s " % (', '.join(['b.%s' % col_name for col_name in all_columns])) \
+        + "FROM %s%s a " % (self.__class__.FTS_TABLE_PREFIX, schema.name) \
+        + "INNER JOIN %s b ON %s " % (schema.name, _and(*join_on_sql)) \
+        + "WHERE %s " % _and(*where_sql) \
+        + "AND %s " % self._format_criteria(None, sql_params, schema, partition_key=partition_key, alias='a') if not partition_key is None else "" \
+        + "ORDER BY %s " % 'a.rank' if sort is None else self._format_sort(sort, 'b') \
+        + "LIMIT %d OFFSET %d" % (limit, offset) if not limit is None else ""
+
+    result = []
+    for row in self._execute(sql, sql_params):
+      result.append(t(**{attr_name: self._decode(row[all_columns.index(
+          attr_name)], schema.columns[attr_name].column_type) for attr_name in all_columns}))
+
+    return result
+
+  def find(self, t: type, criteria=None, sort=None, limit=None, offset=None, partition_key=None, term=None):
+
+    if not term is None:
+      return self._find_ft(t, term, criteria, sort, limit, offset, partition_key)
+
     schema: TableMetadata = t.__table__
 
     sql_params = []
@@ -199,13 +336,13 @@ class SqliteDriver(Driver):
     all_columns = list(schema.columns.keys())
     result_map = all_columns
     select_sql = ', '.join(all_columns)
-    criteria_sql = 'WHERE ' + self._format_criteria(
+    where_sql = 'WHERE ' + self._format_criteria(
         criteria, sql_params, schema, partition_key) if not criteria is None or not partition_key is None else ''
     sort_sql = self._format_sort(sort) if not sort is None else ''
     limit_sql = 'LIMIT %d OFFSET %d' % (
         limit, offset or 0) if not limit is None else ''
     sql = 'SELECT %s FROM %s %s %s %s' % (
-        select_sql, schema.name, criteria_sql, sort_sql, limit_sql)
+        select_sql, schema.name, where_sql, sort_sql, limit_sql)
     result = []
     for row in self._execute(sql, sql_params):
       result.append(t(**{attr_name: self._decode(row[result_map.index(
@@ -257,7 +394,24 @@ class SqliteDriver(Driver):
       log_fn('Sql statement %s:\nsql: %s\nduration_ms: %d' %
              (state_txt, sql, elapsed_mtime))
 
-  def _format_criteria(self, criteria: dict, sql_params: list, schema: TableMetadata, partition_key=None):
+  def _executescript(self, sql: str, cursor=None):
+    target = self._con if cursor is None else cursor
+    begin_mtime = int(time.time() * 1000)
+    elapsed_mtime = None
+    error = None
+    try:
+      return target.executescript(sql)
+    except sqlite3.OperationalError as err:
+      error = err
+      raise
+    finally:
+      state_txt = 'completed' if error is None else 'failed'
+      log_fn = _log.debug if error is None else _log.error
+      elapsed_mtime = int(time.time() * 1000) - begin_mtime
+      log_fn('Sql statement %s:\nsql: %s\nduration_ms: %d' %
+             (state_txt, sql, elapsed_mtime))
+
+  def _format_criteria(self, criteria: dict, sql_params: list, schema: TableMetadata, partition_key=None, alias=None):
     if not criteria is None:
       if not isinstance(criteria, dict):
         raise TypeError('`criteria` must be instance of `dict`')
@@ -266,8 +420,7 @@ class SqliteDriver(Driver):
 
     criteria_sql_list = []
     if not criteria is None:
-      criteria_args = None
-      col_info = None
+      criteria_args = col_info = col_name = None
       for k, v in criteria.items():
         criteria_args = v if isinstance(v, list) else [v]
         if k[0] == "$":
@@ -277,22 +430,33 @@ class SqliteDriver(Driver):
           continue
 
         col_info = schema.columns.get(k)
-
-        criteria_sql_list.append('%s = ?' % k)
+        col_name = k if alias is None else '%s.%s' % (alias, k)
+        criteria_sql_list.append('%s = ?' % col_name)
         sql_params.append(self._encode(v, col_info.column_type))
 
     if partition_key:
-      col_info = None
-      for k, v in vars(partition_key).items():
-        col_info = schema.columns.get(k)
-        criteria_sql_list.append('%s = ?' % k)
-        sql_params.append(self._encode(v, col_info.column_type))
+      criteria_sql_list.append(self._format_key(
+          vars(partition_key), sql_params, schema, prefix=alias))
 
     criteria_sql = ' AND '.join(criteria_sql_list)
     if len(criteria_sql_list) > 1:
       criteria_sql = '(%s)' % criteria_sql
 
     return criteria_sql
+
+  def _format_key(self, values: dict, sql_params: list, schema: TableMetadata, prefix=None):
+    criterias_sql = []
+    col_info = col_name = None
+    for k, v in values.items():
+      col_info = schema.columns.get(k)
+      col_name = k if prefix is None else '%s.%s' % (prefix, k)
+      criterias_sql.append('%s = ?' % col_name)
+      sql_params.append(self._encode(v, col_info.column_type))
+
+    result = ' AND '.join(criterias_sql)
+    if len(criterias_sql) > 1:
+      result = '(' + result + ')'
+    return result
 
   def _format_operator(self, left, right, name, args, sql_params):
     operators = {
@@ -304,7 +468,7 @@ class SqliteDriver(Driver):
 
     return operators[name](*args)
 
-  def _format_sort(self, criteria):
+  def _format_sort(self, criteria, prefix=None):
     if not isinstance(criteria, list):
       raise TypeError('`criteria` must be an instance of `list`')
 
@@ -324,6 +488,9 @@ class SqliteDriver(Driver):
       if sort_dir != 'ASC' and sort_dir != 'DESC':
         raise ValueError(
             '`criteria` items sort direction must be either "ASC" or "DESC"')
+
+      if not prefix is None:
+        attr_name = prefix + '.' + attr_name
 
       criterias_sql.append('%s %s' % (attr_name, sort_dir))
 

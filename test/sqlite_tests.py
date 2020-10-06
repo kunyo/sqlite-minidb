@@ -1,3 +1,4 @@
+import logging
 import json
 import os
 import unittest
@@ -37,6 +38,7 @@ class TestDatabaseUpdate(Model):
   id = Column(Integer(), primary_key=True)
   name = Column(String())
 
+
 class TestFind(Model):
   __tablename__ = 'TestFind'
   client_id = Column(String(), primary_key=True)
@@ -48,6 +50,15 @@ class TestFind(Model):
   locked = Column(Bit())
   created_on = Column(Date())
   updated_on = Column(Date())
+
+
+class TestFullText(Model):
+  __tablename__ = 'TestFullText'
+  client_id = Column(String(), primary_key=True)
+  id = Column(String(), primary_key=True)
+  title = Column(String(), analyze=True)
+  text = Column(String(), analyze=True)
+  published = Column(Bit())
 
 
 @Model.database_initializer
@@ -74,11 +85,19 @@ def _initialize_db(driver: minidb.Driver):
   for td in test_data:
     td['created_on'] = datetime.fromtimestamp(td['created_on'])
     td['updated_on'] = datetime.fromtimestamp(td['updated_on'])
-    
+
     doc = TestFind(**td)
     driver.add(TestFind, doc)
 
+  with open(os.path.join(os.path.dirname(__file__), 'fulltext_test_data.json'), 'rb') as fh:
+    test_data = json.loads(fh.read())
 
+  for td in test_data:
+    doc = TestFullText(**td)
+    driver.add(TestFullText, doc)
+
+
+logging.basicConfig(level=logging.DEBUG)
 Model.build()
 
 
@@ -153,15 +172,18 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert count == 1000
 
   def test_countWithCriteria(self):
-    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
-    count = self._db.count(TestFind, {'state':'active'}, partition_key=partition_key)
+    partition_key = PartitionKey(
+        client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
+    count = self._db.count(
+        TestFind, {'state': 'active'}, partition_key=partition_key)
 
-    assert count == 103    
+    assert count == 103
 
   def test_findOne(self):
     partition_key = '9103d3e3-8155-4664-add1-149124d1d9bc'
     doc_id = '7801eb5c-4993-4da5-8f01-81a44d091e36'
-    doc = self._db.find_one(TestFind, {'id':doc_id,'client_id':partition_key})
+    doc = self._db.find_one(
+        TestFind, {'id': doc_id, 'client_id': partition_key})
 
     assert not doc is None
     assert doc.id == doc_id
@@ -172,7 +194,7 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert doc.locked == True
     assert doc.created_on == datetime(2020, 9, 5, 20, 47, 43)
     assert doc.updated_on == datetime(2020, 3, 7, 18, 8, 47)
-  
+
   def test_findAll(self):
     docs = self._db.find(TestFind)
 
@@ -180,19 +202,21 @@ class SqliteDriverTestCase(unittest.TestCase):
     assert len(docs) == 1000
 
   def test_findAllWithPartitionKey(self):
-    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
+    partition_key = PartitionKey(
+        client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
     docs = self._db.find(TestFind, partition_key=partition_key)
 
     assert not docs is None
-    assert len(docs) == 314    
+    assert len(docs) == 314
 
   def test_find(self):
-    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
+    partition_key = PartitionKey(
+        client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
     docs = self._db.find(
-      TestFind, 
-      criteria={'state':'active'}, 
-      sort=[('first_name', 'ASC')],
-      partition_key=partition_key
+        TestFind,
+        criteria={'state': 'active'},
+        sort=[('first_name', 'ASC')],
+        partition_key=partition_key
     )
 
     assert not docs is None
@@ -202,20 +226,65 @@ class SqliteDriverTestCase(unittest.TestCase):
         assert docs[i-1].first_name <= docs[i].first_name
 
   def test_search(self):
-    partition_key = PartitionKey(client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
+    partition_key = PartitionKey(
+        client_id="9103d3e3-8155-4664-add1-149124d1d9bc")
     response = self._db.search(
-      TestFind, 
-      criteria={'state':'active'}, 
-      sort=[('first_name', 'ASC')],
-      partition_key=partition_key
+        TestFind,
+        criteria={'state': 'active'},
+        sort=[('first_name', 'ASC')],
+        partition_key=partition_key
     )
 
     assert not response is None
     assert response.total == 103
     assert response.page_size == 1000
-    
+
     docs = response.data
-    
+
     for i in range(0, len(docs)):
       if i > 0:
-        assert docs[i-1].first_name <= docs[i].first_name   
+        assert docs[i-1].first_name <= docs[i].first_name, "Invalid sort order"
+
+  def test_fullTextSearch(self):
+    term = 'early'
+    partition_key = PartitionKey(
+        client_id="5a5dfa8d-b821-42c8-ba52-52f4657e18a3")
+    response = self._db.search(
+        TestFullText,
+        partition_key=partition_key,
+        term=term
+    )
+
+    assert not response is None
+    assert response.total == 86
+    assert response.page_size == 1000
+
+    docs = response.data
+
+    for i in range(0, len(docs)):
+      assert docs[i].title.find(term) != -1 or docs[i].text.find(term) != -1
+
+def test_fullTextSearchWithCustomSort(self):
+    term = 'early'
+    partition_key = PartitionKey(
+        client_id="5a5dfa8d-b821-42c8-ba52-52f4657e18a3")
+    response = self._db.search(
+        TestFullText,
+        partition_key=partition_key,
+        sort=[('text', 'DESC',), ('title', 'DESC',)],
+        term=term
+    )
+
+    assert not response is None
+    assert response.total == 86
+    assert response.page_size == 1000
+
+    docs = response.data
+
+    for i in range(0, len(docs)):
+      assert docs[i].title.find(term) != -1 or docs[i].text.find(term) != -1, "Returned doc contains no instance of term" 
+
+    for i in range(0, len(docs)):
+      if i > 0:
+        assert docs[i-1].text >= docs[i].text and docs[i-1].title >= docs[i].title, "Invalid sort order"
+        
