@@ -21,9 +21,9 @@ class ModelMetadata(object):
   def create_db(self, driver: Driver):
     driver.begin_transaction()
     try:
-      for k, v in self._metadata.items():
-        _log.info('Creating table `%s`' % k)
-        driver.create_table(k, v)
+      for table_name, table_info in self._metadata.items():
+        _log.info('Creating table `%s`' % table_name)
+        driver.create_table(table_name, table_info)
 
       if not self._initializer is None:
         _log.info('Invoking database initializer')
