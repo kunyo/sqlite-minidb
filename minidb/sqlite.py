@@ -313,9 +313,8 @@ class SqliteDriver(Driver):
         + "FROM %s%s a " % (self.__class__.FTS_TABLE_PREFIX, schema.name) \
         + "INNER JOIN %s b ON %s " % (schema.name, _and(*join_on_sql)) \
         + "WHERE %s " % _and(*where_sql) \
-        + "AND %s " % self._format_criteria(None, sql_params, schema, partition_key=partition_key, alias='a') if not partition_key is None else "" \
-        + "ORDER BY %s " % 'a.rank' if sort is None else self._format_sort(sort, 'b') \
-        + "LIMIT %d OFFSET %d" % (limit, offset) if not limit is None else ""
+        + "ORDER BY %s " % ('a.rank' if sort is None else self._format_sort(sort, 'b')) \
+        + ("LIMIT %d OFFSET %d" % (limit, offset) if not limit is None else "")
 
     result = []
     for row in self._execute(sql, sql_params):
