@@ -38,7 +38,6 @@ class TestDatabaseUpdate(Model):
   id = Column(Integer(), primary_key=True)
   name = Column(String())
 
-
 class TestFind(Model):
   __tablename__ = 'TestFind'
   client_id = Column(String(), primary_key=True)
@@ -259,13 +258,16 @@ class SqliteDriverTestCase(unittest.TestCase):
         client_id="5a5dfa8d-b821-42c8-ba52-52f4657e18a3")
     response = self._db.search(
         TestFullText,
+        limit=10,
         partition_key=partition_key,
         term=term
     )
 
     assert not response is None
     assert response.total == 86
-    assert response.page_size == 1000
+    assert response.page_size == 10
+    assert not response.data is None
+    assert len(response.data) == 10
 
     docs = response.data
 
@@ -278,6 +280,7 @@ def test_fullTextSearchWithCustomSort(self):
         client_id="5a5dfa8d-b821-42c8-ba52-52f4657e18a3")
     response = self._db.search(
         TestFullText,
+        limit=10,
         partition_key=partition_key,
         sort=[('text', 'DESC',), ('title', 'DESC',)],
         term=term
