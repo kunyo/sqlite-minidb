@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='minidb',
-    version='2.6.0',
+    version='2.6.1',
     url='https://github.com/kunyo/sqlite-minidb',
     license='UNLICENSED',
     author='KN',

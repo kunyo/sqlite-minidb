@@ -59,7 +59,7 @@ class Driver(ABC):
     pass
 
   @abstractmethod
-  def query(self, t, sql):
+  def query(self, t, sql, sql_params=None):
     pass
 
   def search(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None, term=None):
