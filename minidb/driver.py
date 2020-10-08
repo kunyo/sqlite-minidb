@@ -58,6 +58,10 @@ class Driver(ABC):
   def remove(self, t, key):
     pass
 
+  @abstractmethod
+  def query(self, t, sql):
+    pass
+
   def search(self, t, criteria=None, sort=None, limit=None, offset=None, partition_key=None, term=None):
     if limit is None:
       limit = self.__class__.MAX_PAGE_SIZE

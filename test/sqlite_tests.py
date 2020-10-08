@@ -166,6 +166,14 @@ class SqliteDriverTestCase(unittest.TestCase):
 
     assert doc.name == expected_value
 
+  def test_typedQuery(self):
+    docs = self._db.query(TestFind, "SELECT * FROM TestFind where client_id = ?", ['9103d3e3-8155-4664-add1-149124d1d9bc'])
+    
+    assert not docs is None
+    assert len(docs) == 314
+    for doc in docs:
+      assert isinstance(doc, TestFind)
+
   def test_count(self):
     count = self._db.count(TestFind)
 

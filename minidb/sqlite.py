@@ -364,6 +364,16 @@ class SqliteDriver(Driver):
   def remove(self):
     raise NotImplementedError()
 
+  def query(self, t, sql, sql_params=None):
+    schema: TableMetadata = t.__table__
+    all_columns = [col_name for col_name in schema.columns]
+    result = []
+    for row in self._execute(sql, sql_params):
+      result.append(t(**{attr_name: self._decode(row[all_columns.index(
+          attr_name)], schema.columns[attr_name].column_type) for attr_name in all_columns}))
+
+    return result
+
   def _decode(self, value, column_type):
     if not value is None:
       if isinstance(column_type, Date):
